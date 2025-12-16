@@ -1,0 +1,17 @@
+import { NextResponse } from "next/server";
+import { getAdminWallet, getOwnerAddress } from "@/lib/wallet";
+import { listOwnedAgents } from "@/lib/agentic";
+
+export async function GET() {
+  try {
+    const wallet = getAdminWallet();
+    const ownerAddress = await getOwnerAddress(wallet);
+    const agents = await listOwnedAgents({ ownerAddress, wallet });
+    return NextResponse.json({ ok: true, ownerAddress, agents });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Unknown error";
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+  }
+}
+
+
