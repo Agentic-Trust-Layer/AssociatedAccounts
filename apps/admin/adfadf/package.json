@@ -1,0 +1,21 @@
+{
+  "name": "adfadf",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build:worker": "wrangler deploy --dry-run",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.0.0",
+    "@agentic-trust/core": "^1.0.34"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "wrangler": "^3.0.0",
+    "@cloudflare/workers-types": "^4.20241106.0"
+  }
+}
