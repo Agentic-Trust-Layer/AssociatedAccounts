@@ -1,6 +1,5 @@
 import type { Wallet } from "ethers";
 import type { AgentListItem } from "@/lib/types";
-import { ensureGetOwnedAgents } from "@/lib/discoveryOwnedAgents";
 
 function tryParseRawJson(rawJson: unknown): any | null {
   if (typeof rawJson !== "string" || !rawJson.trim()) return null;
@@ -39,21 +38,32 @@ export async function listOwnedAgents(params: {
   const { getDiscoveryClient } = await import("@agentic-trust/core/server");
   const discoveryClient = await getDiscoveryClient();
 
-  const dc = ensureGetOwnedAgents(discoveryClient as any);
-  const agents = await (dc as any).getOwnedAgents(params.ownerAddress, {
+  const agents = await discoveryClient.getOwnedAgents(params.ownerAddress, {
     limit: 100,
     offset: 0,
     orderBy: "agentId",
     orderDirection: "DESC",
   });
 
-  return (agents ?? []).map((a: any, i: number) => ({
-    id: String(a.agentId ?? a.id ?? i),
-    chainId: typeof a.chainId === "number" ? a.chainId : undefined,
-    ownerAddress: typeof a.agentOwner === "string" ? a.agentOwner : undefined,
-    address: pickAgentAccount(a),
-    label: a.agentName ?? a.name ?? undefined,
-  }));
+  console.info("[agents][listOwnedAgents]", {
+    eoa: `${params.ownerAddress.slice(0, 6)}…${params.ownerAddress.slice(-4)}`,
+    count: Array.isArray(agents) ? agents.length : 0,
+  });
+
+  return (agents ?? []).map((a: any, i: number) => {
+    const picked = pickAgentAccount(a);
+    const agentOwner = typeof a.agentOwner === "string" ? a.agentOwner : undefined;
+    // Use agentOwner as fallback if pickAgentAccount returns empty
+    const address = picked || agentOwner || "";
+    return {
+      id: String(a.agentId ?? a.id ?? i),
+      chainId: typeof a.chainId === "number" ? a.chainId : undefined,
+      agentOwnerAddress: agentOwner,
+      eoaOwnerAddress: typeof a.eoaOwner === "string" ? a.eoaOwner : undefined,
+      address,
+      label: a.agentName ?? a.name ?? undefined,
+    };
+  });
 }
 
 

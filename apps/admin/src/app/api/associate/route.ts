@@ -10,9 +10,19 @@ const ASSOCIATIONS_ABI = [
 
 async function resolveToAddress(provider: ethers.Provider, value: string): Promise<string> {
   const v = value.trim();
+  
+  // Handle chainId:0x... format (extract the address part)
+  const chainIdMatch = v.match(/^\d+:(0x[0-9a-fA-F]{40})$/);
+  if (chainIdMatch) {
+    return ethers.getAddress(chainIdMatch[1]);
+  }
+  
+  // Handle plain 0x... address
   if (v.startsWith("0x")) return ethers.getAddress(v);
+  
+  // Handle ENS names
   const resolved = await provider.resolveName(v);
-  if (!resolved) throw new Error(`Could not resolve ENS name: ${v}`);
+  if (!resolved) throw new Error(`Could not resolve address: ${v}`);
   return ethers.getAddress(resolved);
 }
 
@@ -26,7 +36,15 @@ export async function POST(req: Request) {
     };
 
     if (!body?.initiatorAddress || !body?.approverAddress) {
-      return NextResponse.json({ ok: false, error: "Missing initiatorAddress/approverAddress" }, { status: 400 });
+      console.error("[API][associate] Missing addresses:", {
+        hasInitiator: !!body?.initiatorAddress,
+        hasApprover: !!body?.approverAddress,
+        body,
+      });
+      return NextResponse.json(
+        { ok: false, error: `Missing initiatorAddress/approverAddress. Got: ${JSON.stringify(body)}` },
+        { status: 400 }
+      );
     }
 
     const provider = getSepoliaProvider();
@@ -41,13 +59,14 @@ export async function POST(req: Request) {
     // small safety buffer to avoid clock skew causing (block.timestamp < validAt)
     const validAt = Math.max(0, chainNow - 10);
 
+    console.log("******** build sar **********")
     const sar = await buildSignedAssociation({
       chainId,
       wallet,
       initiatorAddress,
       approverAddress,
-      initiatorKeyType: body.initiatorKeyType ?? "0x8002",
-      approverKeyType: body.approverKeyType ?? "0x8002",
+      initiatorKeyType: body.initiatorKeyType ?? "0x0001",
+      approverKeyType: body.approverKeyType ?? "0x0001",
       signIfEOA: false,
       validAt,
     });
@@ -55,7 +74,24 @@ export async function POST(req: Request) {
     const proxy = getAssociationsProxyAddress();
     const contract = new ethers.Contract(proxy, ASSOCIATIONS_ABI, wallet);
     const tx = await contract.storeAssociation(sar);
-    return NextResponse.json({ ok: true, txHash: tx.hash });
+    const receipt = await tx.wait();
+    
+    if (!receipt) {
+      return NextResponse.json({ ok: false, error: "Transaction not found" }, { status: 500 });
+    }
+    
+    const success = receipt.status === 1;
+    console.log("******** receipt = ", receipt);
+    return NextResponse.json({
+      ok: true,
+      txHash: tx.hash,
+      receipt: {
+        status: receipt.status,
+        blockNumber: receipt.blockNumber,
+        gasUsed: receipt.gasUsed.toString(),
+        success,
+      },
+    });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });

@@ -53,18 +53,39 @@ export async function GET(request: Request) {
     const account = searchParams.get("account");
     if (!account) return NextResponse.json({ ok: false, error: "Missing account" }, { status: 400 });
 
+    console.log("[API][associations] Request for account:", account);
+
     const provider = getSepoliaProvider();
     const network = await provider.getNetwork();
     const chainId = Number(network.chainId);
 
-    const addr = account.startsWith("0x")
-      ? ethers.getAddress(account)
-      : ethers.getAddress((await provider.resolveName(account)) ?? "");
+    // Handle chainId:0x... format (extract the address part)
+    let addr: string;
+    const chainIdMatch = account.match(/^\d+:(0x[0-9a-fA-F]{40})$/);
+    if (chainIdMatch) {
+      addr = ethers.getAddress(chainIdMatch[1]);
+      console.log("[API][associations] Extracted address from chainId:format:", addr);
+    } else if (account.startsWith("0x")) {
+      addr = ethers.getAddress(account);
+      console.log("[API][associations] Using plain address:", addr);
+    } else {
+      // Handle ENS names
+      console.log("[API][associations] Resolving ENS name:", account);
+      const resolved = await provider.resolveName(account);
+      if (!resolved) throw new Error(`Could not resolve ENS name: ${account}`);
+      addr = ethers.getAddress(resolved);
+      console.log("[API][associations] Resolved ENS to:", addr);
+    }
+    
     const interoperable = formatEvmV1(chainId, addr);
+    console.log("[API][associations] Formatted interoperable address:", interoperable);
 
     const proxy = getAssociationsProxyAddress();
+    console.log("[API][associations] Calling contract at:", proxy);
     const contract = new ethers.Contract(proxy, ABI, provider);
+    console.log("[API][associations] Calling getAssociationsForAccount...");
     const sars = await contract.getAssociationsForAccount(interoperable);
+    console.log("[API][associations] Received", Array.isArray(sars) ? sars.length : 0, "associations");
 
     const mapped = (sars as any[]).map((sar) => {
       const initiatorParsed = tryParseEvmV1(sar.record.initiator);
@@ -91,12 +112,19 @@ export async function GET(request: Request) {
         counterparty,
         validAt: Number(sar.record.validAt),
         validUntil: Number(sar.record.validUntil),
+        initiatorSignature: typeof sar.initiatorSignature === "string" ? sar.initiatorSignature : "0x",
+        approverSignature: typeof sar.approverSignature === "string" ? sar.approverSignature : "0x",
+        initiatorBytes: typeof sar.record.initiator === "string" ? sar.record.initiator : undefined,
+        approverBytes: typeof sar.record.approver === "string" ? sar.record.approver : undefined,
+        interfaceId: typeof sar.record.interfaceId === "string" ? sar.record.interfaceId : "0x00000000",
+        data: typeof sar.record.data === "string" ? sar.record.data : "0x",
       };
     });
 
     return NextResponse.json({ ok: true, chainId, account: addr, associations: mapped });
   } catch (e: any) {
     const msg = e instanceof Error ? e.message : "Unknown error";
+    console.error("[API][associations] Error:", e);
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }

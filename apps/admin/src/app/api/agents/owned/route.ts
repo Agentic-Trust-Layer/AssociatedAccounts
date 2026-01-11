@@ -1,23 +1,50 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
+import { ethers } from "ethers";
 import { getDiscoveryClient } from "@agentic-trust/core/server";
-import { ensureGetOwnedAgents } from "@/lib/discoveryOwnedAgents";
+
+function parseEoaParam(input: string): { eoaAddress: string } | null {
+  const raw = String(input || "").trim();
+  if (!raw) return null;
+
+  // Accept either:
+  // - 0xabc...
+  // - 11155111:0xabc...  (extract the address part)
+  if (raw.startsWith("0x")) {
+    if (!ethers.isAddress(raw)) return null;
+    return { eoaAddress: ethers.getAddress(raw) };
+  }
+
+  const m = raw.match(/^\d+:(0x[0-9a-fA-F]{40})$/);
+  if (m) {
+    const addr = m[1];
+    if (!ethers.isAddress(addr)) return null;
+    return { eoaAddress: ethers.getAddress(addr) };
+  }
+
+  return null;
+}
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const eoaAddress = searchParams.get("eoaAddress");
+    const eoaAddressRaw = searchParams.get("eoaAddress");
     const source = searchParams.get("source") || "unknown";
     const debug = searchParams.get("debug") === "1";
 
-    if (!eoaAddress) {
+    if (!eoaAddressRaw) {
       return NextResponse.json({ error: "eoaAddress parameter is required" }, { status: 400 });
     }
 
-    if (typeof eoaAddress !== "string" || !eoaAddress.startsWith("0x")) {
-      return NextResponse.json({ error: "Invalid EOA address format" }, { status: 400 });
+    const parsed = parseEoaParam(eoaAddressRaw);
+    if (!parsed) {
+      return NextResponse.json(
+        { error: 'Invalid EOA address. Use "0x..." or "chainId:0x..."' },
+        { status: 400 }
+      );
     }
+    const eoaAddress = parsed.eoaAddress;
 
     const limitParam = searchParams.get("limit");
     const offsetParam = searchParams.get("offset");
@@ -28,8 +55,7 @@ export async function GET(request: Request) {
     const offset = offsetParam ? parseInt(offsetParam, 10) : 0;
 
     const discoveryClient = await getDiscoveryClient();
-    const dc = ensureGetOwnedAgents(discoveryClient as any);
-    const agents = await (dc as any).getOwnedAgents(eoaAddress, {
+    const agents = await discoveryClient.getOwnedAgents(eoaAddress, {
       limit,
       offset,
       orderBy: orderBy as any,

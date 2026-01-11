@@ -308,7 +308,7 @@ export function AssociationsGraphModal(props: {
 
           <div className="mt-3 h-[calc(86vh-88px)] overflow-hidden rounded-lg border border-white/10">
             {data === null ? (
-              <div className="p-4 text-sm text-white/70">Loading…</div>
+              <div className="p-4 text-sm text-white/70">Loading 2 …</div>
             ) : data.ok === false ? (
               <div className="p-4 text-sm text-red-200">{data.error}</div>
             ) : (

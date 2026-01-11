@@ -2,7 +2,8 @@ export type AgentListItem = {
   chainId?: number;
   id: string;
   address: string; // preferred agent AA address
-  ownerAddress?: string; // agentOwner from discovery (often the AA)
+  agentOwnerAddress?: string; // discovery `agentOwner` (often the AA / smart account)
+  eoaOwnerAddress?: string; // discovery `eoaOwner` (if present)
   label?: string;
 };
 

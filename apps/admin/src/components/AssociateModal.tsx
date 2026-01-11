@@ -41,15 +41,48 @@ export function AssociateModal({ open, onOpenChange, initiator, agents }: Props)
     setResult(null);
     setReceipt(null);
     try {
+      // Fetch fresh agent information from SDK
+      const [initiatorRes, approverRes] = await Promise.all([
+        fetch(`/api/agents/${initiator.id}`, { cache: "no-store" }),
+        fetch(`/api/agents/${approver.id}`, { cache: "no-store" }),
+      ]);
+
+      const initiatorData = await initiatorRes.json();
+      const approverData = await approverRes.json();
+
+      console.log("************** initiatorData", initiatorData);
+      console.log("************** approverData", approverData);
+
+      if (!initiatorData.ok || !approverData.ok) {
+        setResult({
+          ok: false,
+          error: `Failed to fetch agent info: ${initiatorData.error || approverData.error}`,
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      const initiatorAgentAccount = initiatorData.agent.rawAgent.agentAccount;
+      const approverAgentAccount = approverData.agent.rawAgent.agentAccount;
+
+
+      console.log("************** initiatorAgentAccount = ", initiatorAgentAccount);
+      console.log("************** approverAgentAccount = ", approverAgentAccount);
+
+      if (!initiatorAgentAccount || !approverAgentAccount) {
+        setResult({ ok: false, error: "Agent accounts are missing" });
+        setIsSubmitting(false);
+        return;
+      }
+
       const res = await fetch("/api/associate", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          initiatorAddress: initiator.address,
-          approverAddress: approver.address,
-          // default assumption: these are smart accounts (ERC-1271)
-          initiatorKeyType: "0x8002",
-          approverKeyType: "0x8002",
+          initiatorAddress: initiatorAgentAccount,
+          approverAddress: approverAgentAccount,
+          initiatorKeyType: "0x0001",
+          approverKeyType: "0x0001",
         }),
       });
       const json = (await res.json()) as AssociateResponse;

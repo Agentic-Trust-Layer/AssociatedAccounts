@@ -10,7 +10,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@agentic-trust/core": "^1.0.40",
+    "@agentic-trust/core": "^1.0.41",
     "@radix-ui/react-dialog": "^1.1.2",
     "@xyflow/react": "^12.8.4",
     "clsx": "^2.1.1",

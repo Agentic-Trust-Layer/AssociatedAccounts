@@ -44,9 +44,9 @@ export async function POST(req: Request) {
     const walletClient = createWalletClient({ chain: sepolia, transport: http(rpcUrl), account: eoa });
 
     const smartAccount = await toMetaMaskSmartAccount({
-      client: publicClient,
+      client: publicClient as any,
       implementation: Implementation.Hybrid,
-      signer: { walletClient },
+      signer: { walletClient: walletClient as any },
       address: fromAccount as any,
     });
 

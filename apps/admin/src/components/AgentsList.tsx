@@ -25,6 +25,7 @@ export function AgentsList() {
     (async () => {
       const res = await fetch("/api/agents", { cache: "no-store" });
       const json = (await res.json()) as AgentsResponse;
+      console.log("************** json", json);
       if (!cancelled) setData(json);
     })().catch((e: unknown) => {
       const msg = e instanceof Error ? e.message : "Unknown error";
@@ -50,7 +51,7 @@ export function AgentsList() {
 
       <div className="p-2">
         {data === null ? (
-          <div className="p-4 text-sm text-white/70">Loading…</div>
+          <div className="p-4 text-sm text-white/70">Loading 1 …</div>
         ) : data.ok === false ? (
           <div className="p-4 text-sm text-red-200">
             {data.error}
@@ -75,6 +76,11 @@ export function AgentsList() {
                       ) : null}
                     </div>
                     <div className="truncate font-mono text-xs text-white/60">{a.address}</div>
+                    {a.agentOwnerAddress ? (
+                      <div className="truncate font-mono text-[11px] text-white/40">
+                        agentOwner: {a.agentOwnerAddress}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -122,8 +128,9 @@ export function AgentsList() {
       <AssociationsModal
         open={assocOpen}
         onOpenChange={setAssocOpen}
-        account={assocFor?.address ?? null}
+        account={assocFor?.address || assocFor?.agentOwnerAddress || null}
         label={assocFor?.label}
+        agentId={assocFor?.id ?? null}
       />
 
       <AssociationsGraphModal
