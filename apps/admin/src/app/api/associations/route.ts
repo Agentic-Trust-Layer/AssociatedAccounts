@@ -3,10 +3,11 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import { getSepoliaProvider } from "@/lib/wallet";
-import { getAssociationsProxyAddress } from "@/lib/config";
+import { getAssociationsProxyAddress, getSepoliaRpcUrl } from "@/lib/config";
 import { formatEvmV1, tryParseEvmV1 } from "@/lib/erc7930";
 
 const ABI = [
+  "function getAssociationIdsForAccount(bytes account) view returns (bytes32[] associationIds)",
   "function getAssociationsForAccount(bytes account) view returns ((uint40 revokedAt,bytes2 initiatorKeyType,bytes2 approverKeyType,bytes initiatorSignature,bytes approverSignature,(bytes initiator,bytes approver,uint40 validAt,uint40 validUntil,bytes4 interfaceId,bytes data) record)[] sars)",
 ] as const;
 
@@ -82,7 +83,19 @@ export async function GET(request: Request) {
 
     const proxy = getAssociationsProxyAddress();
     console.log("[API][associations] Calling contract at:", proxy);
+    console.log("[API][associations] Provider network chainId:", chainId, "name:", network.name);
+    
     const contract = new ethers.Contract(proxy, ABI, provider);
+    
+    // Try calling the contract directly - don't fail on code check as RPC might have issues
+    let code = "";
+    try {
+      code = await provider.getCode(proxy);
+      console.log("[API][associations] Contract code length:", code.length);
+    } catch (e: any) {
+      console.warn("[API][associations] Could not check contract code:", e?.message);
+    }
+    
     console.log("[API][associations] Calling getAssociationsForAccount...");
     const sars = await contract.getAssociationsForAccount(interoperable);
     console.log("[API][associations] Received", Array.isArray(sars) ? sars.length : 0, "associations");

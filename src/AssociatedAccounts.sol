@@ -51,6 +51,19 @@ interface AssociatedAccounts {
     /// @param revokedAt The timestamp at which the association is revoked.
     event AssociationRevoked(bytes32 indexed hash, bytes32 indexed revokedBy, uint256 revokedAt);
 
+    /// @notice Emitted when signatures are updated for an existing association.
+    ///
+    /// @param hash The indexed unique identifier for the association.
+    /// @param updatedBy The indexed keccak256 hash of the ERC-7930 address of the account that updated the signatures.
+    /// @param initiatorSignatureUpdated Whether the initiator signature was updated.
+    /// @param approverSignatureUpdated Whether the approver signature was updated.
+    event AssociationSignaturesUpdated(
+        bytes32 indexed hash,
+        bytes32 indexed updatedBy,
+        bool initiatorSignatureUpdated,
+        bool approverSignatureUpdated
+    );
+
     /// @notice Store a new SignedAssociationRecord after validation.
     /// @param sar The SignedAssociationRecord to store.
     function storeAssociation(SignedAssociationRecord calldata sar) external;
@@ -59,6 +72,16 @@ interface AssociatedAccounts {
     /// @param associationId The unique identifier of the association to revoke.
     /// @param revokedAt Optional timestamp for when the association should be considered revoked (0 for immediate).
     function revokeAssociation(bytes32 associationId, uint40 revokedAt) external;
+
+    /// @notice Update signatures for an existing association.
+    /// @param associationId The unique identifier of the association to update.
+    /// @param initiatorSignature The new initiator signature (empty bytes to keep existing).
+    /// @param approverSignature The new approver signature (empty bytes to keep existing).
+    function updateAssociationSignatures(
+        bytes32 associationId,
+        bytes calldata initiatorSignature,
+        bytes calldata approverSignature
+    ) external;
 
     /// @notice Retrieve a stored association by its identifier.
     /// @param associationId The unique identifier of the association.

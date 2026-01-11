@@ -76,6 +76,54 @@ contract AssociationsStore is AssociatedAccounts {
         emit AssociationRevoked(associationId, senderHash, effectiveRevokedAt);
     }
 
+    /// @notice Update signatures for an existing association.
+    /// @param associationId The unique identifier of the association to update.
+    /// @param initiatorSignature The new initiator signature (empty bytes to keep existing).
+    /// @param approverSignature The new approver signature (empty bytes to keep existing).
+    function updateAssociationSignatures(
+        bytes32 associationId,
+        bytes calldata initiatorSignature,
+        bytes calldata approverSignature
+    ) external {
+        SignedAssociationRecord storage sar = associations[associationId];
+
+        if (sar.record.validAt == 0) revert AssociationNotFound();
+        if (sar.revokedAt != 0) revert AssociationAlreadyRevoked();
+
+        // Format the msg.sender as an ERC-7930 address for comparison
+        bytes memory senderInteroperable = InteroperableAddress.formatEvmV1(block.chainid, msg.sender);
+        bytes32 senderHash = keccak256(senderInteroperable);
+        bytes32 initiatorHash = keccak256(sar.record.initiator);
+        bytes32 approverHash = keccak256(sar.record.approver);
+
+        // Only the initiator or approver can update signatures
+        if (senderHash != initiatorHash && senderHash != approverHash) {
+            revert UnauthorizedRevocation();
+        }
+
+        // Update signatures if provided (non-empty)
+        if (initiatorSignature.length > 0) {
+            // Only initiator can update their own signature
+            if (senderHash != initiatorHash) {
+                revert UnauthorizedRevocation();
+            }
+            sar.initiatorSignature = initiatorSignature;
+        }
+
+        if (approverSignature.length > 0) {
+            // Only approver can update their own signature
+            if (senderHash != approverHash) {
+                revert UnauthorizedRevocation();
+            }
+            sar.approverSignature = approverSignature;
+        }
+
+        // Re-validate the association after signature update
+        if (!sar.validateAssociatedAccount()) revert InvalidAssociation();
+
+        emit AssociationSignaturesUpdated(associationId, senderHash, initiatorSignature.length > 0, approverSignature.length > 0);
+    }
+
     /// @notice Retrieve a stored association by its identifier.
     /// @param associationId The unique identifier of the association.
     /// @return The SignedAssociationRecord corresponding to the associationId.

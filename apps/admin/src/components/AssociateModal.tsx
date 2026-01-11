@@ -62,9 +62,9 @@ export function AssociateModal({ open, onOpenChange, initiator, agents }: Props)
         return;
       }
 
-      const initiatorAgentAccount = initiatorData.agent.rawAgent.agentAccount;
-      const approverAgentAccount = approverData.agent.rawAgent.agentAccount;
-
+      // Use agentAccount from the API response (which uses pickAgentAccount to get the correct smart account address)
+      const initiatorAgentAccount = initiatorData.agent.agentAccount;
+      const approverAgentAccount = approverData.agent.agentAccount;
 
       console.log("************** initiatorAgentAccount = ", initiatorAgentAccount);
       console.log("************** approverAgentAccount = ", approverAgentAccount);
@@ -81,8 +81,7 @@ export function AssociateModal({ open, onOpenChange, initiator, agents }: Props)
         body: JSON.stringify({
           initiatorAddress: initiatorAgentAccount,
           approverAddress: approverAgentAccount,
-          initiatorKeyType: "0x0001",
-          approverKeyType: "0x0001",
+          // keyType is automatically detected by the API route based on whether addresses are contracts
         }),
       });
       const json = (await res.json()) as AssociateResponse;

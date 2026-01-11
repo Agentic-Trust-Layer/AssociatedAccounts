@@ -54,19 +54,39 @@ export async function POST(req: Request) {
 
     const initiatorAddress = await resolveToAddress(provider, body.initiatorAddress);
     const approverAddress = await resolveToAddress(provider, body.approverAddress);
+    
+    // Detect if addresses are smart accounts (contracts) or EOAs
+    const [initiatorCode, approverCode] = await Promise.all([
+      provider.getCode(initiatorAddress),
+      provider.getCode(approverAddress),
+    ]);
+    const initiatorIsContract = initiatorCode !== "0x" && initiatorCode !== "";
+    const approverIsContract = approverCode !== "0x" && approverCode !== "";
+    
+    // Set keyType: 0x0001 (ECDSA/K1) for EOA, 0x8002 (ERC1271) for smart accounts
+    const initiatorKeyType = body.initiatorKeyType ?? (initiatorIsContract ? "0x8002" : "0x0001");
+    const approverKeyType = body.approverKeyType ?? (approverIsContract ? "0x8002" : "0x0001");
+    
     const latestBlock = await provider.getBlock("latest");
     const chainNow = Number(latestBlock?.timestamp ?? Math.floor(Date.now() / 1000));
     // small safety buffer to avoid clock skew causing (block.timestamp < validAt)
     const validAt = Math.max(0, chainNow - 10);
 
-    console.log("******** build sar **********")
+    console.log("******** build sar **********", {
+      initiatorAddress,
+      approverAddress,
+      initiatorIsContract,
+      approverIsContract,
+      initiatorKeyType,
+      approverKeyType,
+    });
     const sar = await buildSignedAssociation({
       chainId,
       wallet,
       initiatorAddress,
       approverAddress,
-      initiatorKeyType: body.initiatorKeyType ?? "0x0001",
-      approverKeyType: body.approverKeyType ?? "0x0001",
+      initiatorKeyType,
+      approverKeyType,
       signIfEOA: false,
       validAt,
     });

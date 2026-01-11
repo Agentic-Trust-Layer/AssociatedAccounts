@@ -144,7 +144,12 @@ library AssociatedAccountsLib {
     }
 
     function _validateErc1271(bytes32 hash, address account, bytes memory signature) internal view returns (bool) {
-        return IERC1271(account).isValidSignature(hash, signature);
+        (bool success, bytes memory result) = account.staticcall(
+            abi.encodeCall(IERC1271.isValidSignature, (hash, signature))
+        );
+        return (success &&
+            result.length >= 32 &&
+            abi.decode(result, (bytes32)) == bytes32(IERC1271.isValidSignature.selector));
     }
 
     function _validateErc6492(bytes32 hash, address account, bytes memory signature) internal view returns (bool) {
