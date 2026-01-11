@@ -90,7 +90,10 @@ export async function POST(req: Request) {
     };
 
     const digest = eip712Hash(record);
-    const signature = await wallet.signMessage(ethers.getBytes(digest));
+    // For ERC1271, we need to sign the raw hash directly (without message prefix)
+    // Use signingKey.sign() to sign the raw hash bytes
+    const hashBytes = ethers.getBytes(digest);
+    const signature = wallet.signingKey.sign(hashBytes).serialized;
 
     // If storeOnChain is true, store/update the signature on-chain
     let txHash: string | undefined;

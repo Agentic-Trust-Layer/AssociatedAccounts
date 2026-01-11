@@ -13,7 +13,6 @@ export async function GET() {
       );
     }
     const agents = await listOwnedAgents({ ownerAddress, wallet });
-    console.log("************** agents", agents);
     return NextResponse.json({ ok: true, ownerAddress, agents });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Unknown error";

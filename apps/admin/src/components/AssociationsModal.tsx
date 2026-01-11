@@ -14,6 +14,8 @@ type Assoc = {
   revokedAt: number;
   initiatorSignature: string;
   approverSignature: string;
+  initiatorKeyType: string;
+  approverKeyType: string;
   initiatorBytes?: string; // original bytes from contract
   approverBytes?: string; // original bytes from contract
   interfaceId?: string;
@@ -180,6 +182,22 @@ export function AssociationsModal(props: {
                         <div>
                           <div className="text-white/60">counterparty</div>
                           <div className="font-mono">{a.counterparty}</div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <div className="text-white/60">initiatorKeyType</div>
+                            <div className="font-mono">{a.initiatorKeyType}</div>
+                            <div className="text-[10px] text-white/40">
+                              {a.initiatorKeyType === "0x0001" ? "(ECDSA/K1 - EOA)" : a.initiatorKeyType === "0x8002" ? "(ERC1271 - Smart Account)" : "(Unknown)"}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-white/60">approverKeyType</div>
+                            <div className="font-mono">{a.approverKeyType}</div>
+                            <div className="text-[10px] text-white/40">
+                              {a.approverKeyType === "0x0001" ? "(ECDSA/K1 - EOA)" : a.approverKeyType === "0x8002" ? "(ERC1271 - Smart Account)" : "(Unknown)"}
+                            </div>
+                          </div>
                         </div>
                         <div className="grid grid-cols-3 gap-2">
                           <div>

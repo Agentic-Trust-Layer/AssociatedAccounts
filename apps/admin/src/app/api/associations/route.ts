@@ -97,8 +97,26 @@ export async function GET(request: Request) {
     }
     
     console.log("[API][associations] Calling getAssociationsForAccount...");
-    const sars = await contract.getAssociationsForAccount(interoperable);
-    console.log("[API][associations] Received", Array.isArray(sars) ? sars.length : 0, "associations");
+    let sars: any[];
+    try {
+      sars = await contract.getAssociationsForAccount(interoperable);
+      console.log("[API][associations] Received", Array.isArray(sars) ? sars.length : 0, "associations");
+    } catch (e: any) {
+      console.error("[API][associations] Error calling getAssociationsForAccount:", e?.message || e);
+      // If the call fails, try the simpler function to verify the contract works
+      try {
+        const ids = await contract.getAssociationIdsForAccount(interoperable);
+        console.log("[API][associations] getAssociationIdsForAccount returned", Array.isArray(ids) ? ids.length : 0, "IDs");
+        // If IDs work, return empty array instead of failing
+        return NextResponse.json({ ok: true, chainId, account: addr, associations: [] });
+      } catch (e2: any) {
+        console.error("[API][associations] getAssociationIdsForAccount also failed:", e2?.message || e2);
+        throw new Error(
+          `Contract call failed. This may indicate the contract was redeployed or the function signature changed. ` +
+          `Error: ${e?.message || e}`
+        );
+      }
+    }
 
     const mapped = (sars as any[]).map((sar) => {
       const initiatorParsed = tryParseEvmV1(sar.record.initiator);
@@ -127,6 +145,8 @@ export async function GET(request: Request) {
         validUntil: Number(sar.record.validUntil),
         initiatorSignature: typeof sar.initiatorSignature === "string" ? sar.initiatorSignature : "0x",
         approverSignature: typeof sar.approverSignature === "string" ? sar.approverSignature : "0x",
+        initiatorKeyType: typeof sar.initiatorKeyType === "string" ? sar.initiatorKeyType : "0x0000",
+        approverKeyType: typeof sar.approverKeyType === "string" ? sar.approverKeyType : "0x0000",
         initiatorBytes: typeof sar.record.initiator === "string" ? sar.record.initiator : undefined,
         approverBytes: typeof sar.record.approver === "string" ? sar.record.approver : undefined,
         interfaceId: typeof sar.record.interfaceId === "string" ? sar.record.interfaceId : "0x00000000",

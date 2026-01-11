@@ -27,6 +27,10 @@ type Resp =
   | { ok: true; chainId: number; account: string; associations: Assoc[] }
   | { ok: false; error: string };
 
+type AgentDetailsResponse =
+  | { ok: true; agent: { id: string; chainId?: number; agentAccount: string; agentOwner?: string; eoaOwner?: string; label?: string; rawAgent: any } }
+  | { ok: false; error: string };
+
 function shortAddr(a: string) {
   return a.length > 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
 }
@@ -50,22 +54,48 @@ export function AssociationsGraphModal(props: {
   }, [agentsIndex]);
 
   useEffect(() => {
-    if (!open || !center?.address) return;
+    if (!open) return;
     let cancelled = false;
     setData(null);
     setExpanded({});
+
     (async () => {
-      const res = await fetch(`/api/associations?account=${encodeURIComponent(center.address)}`, { cache: "no-store" });
+      let accountToUse = center?.address;
+      
+      // Always fetch agent details if we have an ID to get the correct smart account address
+      if (center?.id) {
+        try {
+          const agentRes = await fetch(`/api/agents/${center.id}`, { cache: "no-store" });
+          const agentData = await agentRes.json() as AgentDetailsResponse;
+          if (agentData.ok && agentData.agent?.rawAgent?.agentAccount) {
+            accountToUse = agentData.agent.rawAgent.agentAccount;
+          } else if (agentData.ok === false) {
+            console.error("Failed to fetch agent info:", agentData.error);
+            // Fall back to center.address if fetch fails
+          }
+        } catch (e) {
+          console.error("Failed to fetch agent info:", e);
+          // Fall back to center.address if fetch fails
+        }
+      }
+
+      if (!accountToUse) {
+        if (!cancelled) setData({ ok: false, error: "Agent account not found" });
+        return;
+      }
+
+      const res = await fetch(`/api/associations?account=${encodeURIComponent(accountToUse)}`, { cache: "no-store" });
       const json = (await res.json()) as Resp;
       if (!cancelled) setData(json);
     })().catch((e: unknown) => {
       const msg = e instanceof Error ? e.message : "Unknown error";
-      setData({ ok: false, error: msg });
+      if (!cancelled) setData({ ok: false, error: msg });
     });
+    
     return () => {
       cancelled = true;
     };
-  }, [open, center?.address]);
+  }, [open, center?.address, center?.id]);
 
   // Expand the graph: fetch associations for each first-hop counterparty (depth = 2 total).
   useEffect(() => {

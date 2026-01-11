@@ -63,8 +63,8 @@ export function AssociateModal({ open, onOpenChange, initiator, agents }: Props)
       }
 
       // Use agentAccount from the API response (which uses pickAgentAccount to get the correct smart account address)
-      const initiatorAgentAccount = initiatorData.agent.agentAccount;
-      const approverAgentAccount = approverData.agent.agentAccount;
+      const initiatorAgentAccount = initiatorData.agent.rawAgent.agentAccount;
+      const approverAgentAccount = approverData.agent.rawAgent.agentAccount;
 
       console.log("************** initiatorAgentAccount = ", initiatorAgentAccount);
       console.log("************** approverAgentAccount = ", approverAgentAccount);

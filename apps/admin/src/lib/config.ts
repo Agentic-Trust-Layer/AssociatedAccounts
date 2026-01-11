@@ -3,7 +3,7 @@ import { ethers } from "ethers";
 const DEFAULTS = {
   sepoliaRpcUrl: "https://rpc.sepolia.org",
   // keep lowercase so ethers can checksum-normalize it
-  associationsStoreProxy: "0xe6aa291353a8aa7ee9cfe89787981ccf4f47fc3f",
+  associationsStoreProxy: "0x3418a5297c75989000985802b8ab01229cdddd24",
 } as const;
 
 function req(name: string): string {
