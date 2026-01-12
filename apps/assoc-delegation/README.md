@@ -4,7 +4,13 @@ This app demonstrates the full flow of:
 1. Fetching an agent account from the discovery service
 2. Creating an ERC-8092 association with initiator (EOA) and approver (agent account)
 3. Storing the association on-chain with initiator signature
-4. Updating the approver signature using the agent account via ERC-4337 (gasless)
+4. Updating the approver signature using a **session smart account + MetaMask delegation** (gasless via bundler)
+
+## Deployments (Ethereum Sepolia)
+
+- **AssociationsStore proxy**: `0x3418a5297c75989000985802b8ab01229cdddd24` ([View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x3418a5297c75989000985802b8ab01229cdddd24))
+- **Implementation**: `0x3075039024b10c408c6ea8fd78fa9f66f29e4ea4` ([View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x3075039024b10c408c6ea8fd78fa9f66f29e4ea4))
+- **ProxyAdmin**: `0xe413652dc3aa3915ead3813b29f0051e68b3194a` ([View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0xe413652dc3aa3915ead3813b29f0051e68b3194a))
 
 ## Environment Variables
 
@@ -61,7 +67,11 @@ The app uses environment variables from the root `.env` file or can have its own
 
 3. **Stores Association**: Sends a transaction from the initiator EOA to store the association with the initiator signature.
 
-4. **Updates Approver Signature**: Uses ERC-4337 to send a gasless transaction from the agent account to update the approver signature. The signature is signed by the agent owner EOA and validated via ERC-1271 on the agent account.
+4. **Updates Approver Signature (delegation)**:
+   - Creates a fresh **session smart account**
+   - Creates + signs a **MetaMask delegation** from the agent account to the session smart account, scoped to `updateAssociationSignatures(...)`
+   - The session account sends a sponsored UserOp to `DelegationManager.redeemDelegations(...)`, which executes `updateAssociationSignatures(...)` **as the agent account**
+   - The approver signature is signed by the agent owner EOA and validated via **ERC-1271** on the agent account
 
 ## Notes
 
@@ -69,4 +79,10 @@ The app uses environment variables from the root `.env` file or can have its own
 - Signatures for ERC-1271 validation are created by signing the raw EIP-712 hash directly (without message prefix).
 - The agent account must be a contract (smart account) that supports ERC-1271 validation.
 - The agent owner EOA private key must match the owner of the agent account.
+
+## Updated Features
+
+- **Update initiator or approver signatures**: the underlying contract supports updating either signature via `updateAssociationSignatures(...)`.
+- **ERC-1271 support**: validation checks the standard magic value `0x1626ba7e`.
+- **MetaMask Smart Account delegation**: this app includes a working example of session-account delegation + redemption to execute as the agent account.
 

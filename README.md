@@ -10,15 +10,22 @@ This repo implements:
 
 ## Deployments
 
-The Associations Store has been deployed to Base Sepolia behind a Transparent Upgradeable Proxy. This instance of the store has been deployed behind a proxy so that small changes in the spec can be reflected in the implementation without needing to redeploy.
+The Associations Store has been deployed to **Ethereum Sepolia (chainId 11155111)** behind a **Transparent Upgradeable Proxy**.
+This allows upgrading the implementation while keeping state at the proxy address.
 
 | Contract | Address | Link |
 |----------|---------|------|
-| **Proxy** | `0x6f4D643BD9332d9Aa3a828576e3a64ccc58D2684` | [View on Sepolia BaseScan](https://sepolia.basescan.org/address/0x6f4D643BD9332d9Aa3a828576e3a64ccc58D2684) |
-| Implementation | `0x868C5e78c6bB86E3794d8c5beBf27941644722B7` | [View on Sepolia BaseScan](https://sepolia.basescan.org/address/0x868C5e78c6bB86E3794d8c5beBf27941644722B7) |
-| ProxyAdmin | `0x5650Ccf0B216826B5bCeCc9033691Ad515B1f5ad` | [View on Sepolia BaseScan](https://sepolia.basescan.org/address/0x5650Ccf0B216826B5bCeCc9033691Ad515B1f5ad) |
+| **Proxy** | `0x3418a5297c75989000985802b8ab01229cdddd24` | [View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x3418a5297c75989000985802b8ab01229cdddd24) |
+| Implementation | `0x3075039024b10c408c6ea8fd78fa9f66f29e4ea4` | [View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x3075039024b10c408c6ea8fd78fa9f66f29e4ea4) |
+| ProxyAdmin | `0xe413652dc3aa3915ead3813b29f0051e68b3194a` | [View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0xe413652dc3aa3915ead3813b29f0051e68b3194a) |
 
 > **Note:** Always interact with the Proxy address. The implementation contract contains the logic, but the proxy maintains the state and is upgradeable. 
+
+## Updated Features
+
+- **Signature updates**: `updateAssociationSignatures(bytes32 associationId, bytes initiatorSignature, bytes approverSignature)` allows updating **either** signature on an existing association (only the initiator can update the initiator signature; only the approver can update the approver signature).
+- **ERC-1271 support**: ERC-1271 validation uses the standard `bytes4` magic value return from `isValidSignature(bytes32,bytes)` (`0x1626ba7e`).
+- **MetaMask Smart Account delegation examples**: see `apps/assoc-delegation` for an end-to-end example where a **session smart account** redeems a delegation to execute `updateAssociationSignatures` as the agent account (gasless via bundler).
 
 
 ## Documentation
