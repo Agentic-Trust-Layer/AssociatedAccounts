@@ -213,8 +213,9 @@ export async function POST(req: Request) {
     const hashBytes = ethers.getBytes(digest);
     const approverSignature = agentOwnerWallet.signingKey.sign(hashBytes).serialized;
     console.log("✓ Approver signature (agent owner EOA, raw hash bytes):", approverSignature.slice(0, 20) + "...");
+    console.log(" ........... approverSignature from agentOwnerWallet:", approverSignature);
 
-    // Step 8: Store association with initiator signature only (if needed)
+    // Step 8: Store association with initiator signature only (if needed)  
     let storeHash: string | null = null;
 
     if (needsInitiatorSignature) {
@@ -398,6 +399,7 @@ export async function POST(req: Request) {
 
       // Preflight ERC-1271 validation
       console.log("    Preflighting ERC-1271 validation...");
+      console.log(" ........... approverSignature:", approverSignature);
       try {
         const ERC1271_ABI = parseAbi([
           "function isValidSignature(bytes32 hash, bytes signature) view returns (bytes4 magicValue)",

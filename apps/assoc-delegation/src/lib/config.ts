@@ -45,7 +45,7 @@ export function getAssociationsProxyAddress(): string {
 }
 
 export function getAgentId(): number {
-  const agentId = process.env.AGENT_ID ? parseInt(process.env.AGENT_ID, 10) : 133;
+  const agentId = process.env.AGENT_ID ? parseInt(process.env.AGENT_ID, 10) : 336;
   if (isNaN(agentId)) throw new Error("AGENT_ID must be a valid number");
   return agentId;
 }
