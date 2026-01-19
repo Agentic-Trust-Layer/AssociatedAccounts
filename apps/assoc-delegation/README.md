@@ -8,9 +8,11 @@ This app demonstrates the full flow of:
 
 ## Deployments (Ethereum Sepolia)
 
-- **AssociationsStore proxy**: `0x3418a5297c75989000985802b8ab01229cdddd24` ([View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x3418a5297c75989000985802b8ab01229cdddd24))
-- **Implementation**: `0x3075039024b10c408c6ea8fd78fa9f66f29e4ea4` ([View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x3075039024b10c408c6ea8fd78fa9f66f29e4ea4))
-- **ProxyAdmin**: `0xe413652dc3aa3915ead3813b29f0051e68b3194a` ([View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0xe413652dc3aa3915ead3813b29f0051e68b3194a))
+- **AssociationsStore proxy**: `0x8346903837f89BaC08B095DbF5c1095071a0f349` ([View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x8346903837f89bac08b095dbf5c1095071a0f349))
+- **Implementation**: `0x8a0d549E7799D54B7730BB167Ff92983b1F3e5b5` ([View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x8a0d549e7799d54b7730bb167ff92983b1f3e5b5))
+- **ProxyAdmin**: `0x341aA8119033340173C1A6944124d52bF8198551` ([View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x341aa8119033340173c1a6944124d52bf8198551))
+- **ScDelegationEnforcer (marker)**: `0xd92ccc840b130920c2041BEEd4dB143d8EbF72a8` ([View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0xd92ccc840b130920c2041beed4db143d8ebf72a8))
+- **ScDelegationVerifier**: `0x3F5795716DffEc92bd3eb861BBc9Bc01d5b9bCb9` ([View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x3f5795716dffec92bd3eb861bbc9bc01d5b9bcb9))
 
 ## Environment Variables
 
@@ -30,7 +32,7 @@ The app uses environment variables from the root `.env` file or can have its own
 
 - `AGENT_ID` - Agent ID to use (default: 133)
 - `AGENT_ACCOUNT_ADDRESS` - Override agent account address (if not set, will fetch from discovery)
-- `ASSOCIATIONS_STORE_PROXY` - Associations Store proxy address (default: 0x3418A5297C75989000985802B8ab01229CDDDD24)
+- `ASSOCIATIONS_STORE_PROXY` - Associations Store proxy address (default: 0x8346903837f89BaC08B095DbF5c1095071a0f349)
 
 ## Usage
 
@@ -55,6 +57,7 @@ The app uses environment variables from the root `.env` file or can have its own
 5. Open http://localhost:3000 (or the port Next.js assigns)
 
 6. Click "Run Test" button to execute the association delegation test
+7. Click "List Associations" to query all association records for the agent and display full details (including signatures and session delegate address for SC-DELEGATION).
 
 ## What It Does
 
@@ -63,22 +66,32 @@ The app uses environment variables from the root `.env` file or can have its own
 2. **Creates Association Record**: Creates an ERC-8092 `AssociatedAccountRecord` with:
    - Initiator: The EOA from `INITIATOR_PRIVATE_KEY`
    - Approver: The agent account (smart account)
-   - Key types: `0x0001` (K1/EOA) for initiator, `0x8002` (ERC1271) for approver
+   - Key types: `0x0001` (K1/EOA) for initiator, `0x8004` (SC-DELEGATION) for approver
+
+   Optional: set `INITIATOR_KEY_TYPE=0x8004` to make the **initiator signature** use SC-DELEGATION as well.
 
 3. **Stores Association**: Sends a transaction from the initiator EOA to store the association with the initiator signature.
 
-4. **Updates Approver Signature (delegation)**:
+4. **Builds SC-DELEGATION approver signature proof (0x8004)**:
+   - Creates a fresh **session delegate EOA**
+   - The session delegate signs the **raw association digest** (ECDSA over `bytes32`)
+   - Creates a MetaMask DF delegation chain from the agent account (approver) to the session EOA, with a **binding caveat**:
+     - `caveat.enforcer == scDelegationEnforcer`
+     - `caveat.terms == digest` (32 bytes)
+   - Packs the proof into `approverSignature = abi.encode((address delegate, bytes delegateSignature, bytes delegations))`
+
+5. **Updates Approver Signature (execution delegation)**:
    - Creates a fresh **session smart account**
    - Creates + signs a **MetaMask delegation** from the agent account to the session smart account, scoped to `updateAssociationSignatures(...)`
    - The session account sends a sponsored UserOp to `DelegationManager.redeemDelegations(...)`, which executes `updateAssociationSignatures(...)` **as the agent account**
-   - The approver signature is signed by the agent owner EOA and validated via **ERC-1271** on the agent account
+   - The approver signature is the **SC-DELEGATION proof** (so third parties can validate it via ERC-8092 without relying on agent ERC-1271 being delegation-aware)
 
 ## Notes
 
-- The app uses `0x8002` (ERC1271) as the key type for smart accounts, not `0x8001`.
-- Signatures for ERC-1271 validation are created by signing the raw EIP-712 hash directly (without message prefix).
-- The agent account must be a contract (smart account) that supports ERC-1271 validation.
-- The agent owner EOA private key must match the owner of the agent account.
+- SC-DELEGATION (`0x8004`) is validated by the AssociationsStore/AssociatedAccountsLib stack, not by calling `agentAccount.isValidSignature(hash, signature)` directly.
+- The session delegate signature is ECDSA over the raw EIP-712 digest bytes32 (no message prefix).
+- The DelegationManager DF signatures are verified using EIP-712 domain: name=`DelegationManager`, version=`1`, chainId=`block.chainid`, verifyingContract=`delegationManager`.
+- Most non-UI logic lives in `@associatedaccounts/erc8092-sdk` (EIP-712 hashing, DF typed digest helpers, SC-DELEGATION proof encode/decode, proxy probing).
 
 ## Updated Features
 

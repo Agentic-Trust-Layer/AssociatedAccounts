@@ -3,6 +3,12 @@ import { formatEvmV1 } from "./erc7930";
 import { eip712Hash } from "./eip712";
 import type { SignedAssociationRecord } from "./types";
 
+export function signErc8092DigestK1(params: { wallet: ethers.Wallet; digest: string }): string {
+  // For K1/EOA in this repo/contracts: sign the raw bytes32 digest (NO EIP-191 prefix).
+  const sig = params.wallet.signingKey.sign(ethers.getBytes(params.digest));
+  return sig.serialized;
+}
+
 export async function buildSignedAssociation(params: {
   chainId: number;
   wallet: ethers.Wallet;
@@ -37,10 +43,10 @@ export async function buildSignedAssociation(params: {
     const digest = eip712Hash(record);
     const signerAddr = (await params.wallet.getAddress()).toLowerCase();
     if (params.initiatorAddress.toLowerCase() === signerAddr) {
-      initiatorSignature = await params.wallet.signMessage(ethers.getBytes(digest));
+      initiatorSignature = signErc8092DigestK1({ wallet: params.wallet, digest });
     }
     if (params.approverAddress.toLowerCase() === signerAddr) {
-      approverSignature = await params.wallet.signMessage(ethers.getBytes(digest));
+      approverSignature = signErc8092DigestK1({ wallet: params.wallet, digest });
     }
   }
 

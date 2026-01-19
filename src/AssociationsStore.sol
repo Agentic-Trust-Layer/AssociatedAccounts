@@ -4,12 +4,59 @@ pragma solidity ^0.8.24;
 import {AssociatedAccountsLib} from "./AssociatedAccountsLib.sol";
 import {AssociatedAccounts} from "./AssociatedAccounts.sol";
 import {InteroperableAddress} from "./InteroperableAddresses.sol";
+import {ScDelegationLib} from "./ScDelegationLib.sol";
 
 /// @title AssociationsStore
 /// @notice Proof of concept storage contract for Associations compliant with ERC-8092: Associated Accounts.
 /// https://github.com/ethereum/ERCs/pull/1377/files
 contract AssociationsStore is AssociatedAccounts {
     using AssociatedAccountsLib for *;
+
+    /// @dev Minimal ownable + init for proxy deployments.
+    bool private _initialized;
+    address public owner;
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "NOT_OWNER");
+        _;
+    }
+
+    /// @notice Delegation config for SC_DELEGATION signature validation.
+    address public delegationManager;
+    address public scDelegationEnforcer;
+    address public scDelegationVerifier;
+
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event DelegationConfigUpdated(address indexed delegationManager, address indexed scDelegationEnforcer, address indexed scDelegationVerifier);
+
+    function initialize(address _owner, address _delegationManager, address _scDelegationEnforcer, address _scDelegationVerifier) external {
+        require(!_initialized, "ALREADY_INITIALIZED");
+        _initialized = true;
+        owner = _owner;
+        delegationManager = _delegationManager;
+        scDelegationEnforcer = _scDelegationEnforcer;
+        scDelegationVerifier = _scDelegationVerifier;
+        emit OwnershipTransferred(address(0), _owner);
+        emit DelegationConfigUpdated(_delegationManager, _scDelegationEnforcer, _scDelegationVerifier);
+    }
+
+    function setDelegationConfig(address _delegationManager, address _scDelegationEnforcer, address _scDelegationVerifier) external onlyOwner {
+        delegationManager = _delegationManager;
+        scDelegationEnforcer = _scDelegationEnforcer;
+        scDelegationVerifier = _scDelegationVerifier;
+        emit DelegationConfigUpdated(_delegationManager, _scDelegationEnforcer, _scDelegationVerifier);
+    }
+
+    function transferOwnership(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "ZERO_OWNER");
+        address prev = owner;
+        owner = newOwner;
+        emit OwnershipTransferred(prev, newOwner);
+    }
+
+    function _scCfg() internal view returns (ScDelegationLib.Config memory) {
+        return ScDelegationLib.Config({delegationManager: delegationManager, scDelegationEnforcer: scDelegationEnforcer});
+    }
 
     /// @dev Mapping from association ID to SignedAssociationRecord
     mapping(bytes32 => SignedAssociationRecord) private associations;
@@ -38,7 +85,7 @@ contract AssociationsStore is AssociatedAccounts {
         bytes32 associationId = sar.associationIdFromSAR();
 
         if (associations[associationId].record.validAt != 0) revert AssociationAlreadyExists();
-        if (!sar.validateAssociatedAccount()) revert InvalidAssociation();
+        if (!AssociatedAccountsLib.validateAssociatedAccountWithConfig(sar, _scCfg(), scDelegationVerifier)) revert InvalidAssociation();
 
         bytes32 initiatorHash = keccak256(sar.record.initiator);
         bytes32 approverHash = keccak256(sar.record.approver);
@@ -119,7 +166,8 @@ contract AssociationsStore is AssociatedAccounts {
         }
 
         // Re-validate the association after signature update
-        if (!sar.validateAssociatedAccount()) revert InvalidAssociation();
+        SignedAssociationRecord memory sarMem = sar;
+        if (!AssociatedAccountsLib.validateAssociatedAccountWithConfig(sarMem, _scCfg(), scDelegationVerifier)) revert InvalidAssociation();
 
         emit AssociationSignaturesUpdated(associationId, senderHash, initiatorSignature.length > 0, approverSignature.length > 0);
     }
@@ -160,6 +208,11 @@ contract AssociationsStore is AssociatedAccounts {
         }
 
         return sars;
+    }
+
+    /// @notice Convenience view for clients to validate a SAR under current SC_DELEGATION config (off-chain preflight).
+    function validateSignedAssociationRecord(SignedAssociationRecord calldata sar) external view returns (bool) {
+        return AssociatedAccountsLib.validateAssociatedAccountWithConfig(sar, _scCfg(), scDelegationVerifier);
     }
 
     /// @notice Get all active (non-revoked and currently valid) associations for a given account.

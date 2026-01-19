@@ -7,18 +7,27 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
 import { toMetaMaskSmartAccount, Implementation, createDelegation, getSmartAccountsEnvironment, ExecutionMode } from "@metamask/smart-accounts-kit";
 import { DelegationManager } from "@metamask/smart-accounts-kit/contracts";
+import { encodeDelegations } from "@metamask/smart-accounts-kit/utils";
 import { getChainRpcUrl, getChainBundlerUrl, requireChainEnvVar, getDiscoveryClient } from "@agentic-trust/core/server";
 import { sendSponsoredUserOperation, waitForUserOperationReceipt } from "@agentic-trust/core";
-import { formatEvmV1, eip712Hash, associationIdFromRecord, ASSOCIATIONS_STORE_ABI } from "@associatedaccounts/erc8092-sdk";
+import {
+  ASSOCIATIONS_STORE_ABI,
+  DF_ROOT_AUTHORITY,
+  KEY_TYPE_ERC1271,
+  KEY_TYPE_K1,
+  KEY_TYPE_SC_DELEGATION,
+  associationIdFromRecord,
+  dfHashDelegationStruct,
+  dfTypedDigest,
+  eip712Hash,
+  encodeScDelegationProof,
+  formatEvmV1,
+} from "@associatedaccounts/erc8092-sdk";
 import { getAdminWallet, getInitiatorWallet, getAgentOwnerWallet, getSepoliaProvider, getOwnerAddress } from "@/lib/wallet";
-import { getAgentId, getAgentAccountAddress, getAssociationsProxyAddress } from "@/lib/config";
+import { getAgentId, getAgentAccountAddress, getAssociationsProxyAddressCandidates } from "@/lib/config";
 import { getAgentById } from "@/lib/agentic";
 
 const CHAIN_ID = 11155111; // Sepolia
-
-// Key types
-const KEY_TYPE_K1 = "0x0001"; // EOA - ECDSA/K1
-const KEY_TYPE_ERC1271 = "0x8002"; // Smart account - ERC1271
 
 export async function POST(req: Request) {
   try {
@@ -135,7 +144,58 @@ export async function POST(req: Request) {
     let associationId = associationIdFromRecord(record);
     console.log("✓ Association ID:", associationId);
 
-    const associationsProxy = getAssociationsProxyAddress();
+    // Pick the first proxy that matches the *current* AssociationsStore ABI (must expose delegationManager()).
+    // This lets us survive stale `.env` values pointing at old proxies.
+    const proxyCandidates = getAssociationsProxyAddressCandidates();
+    const cfgAbi = parseAbi([
+      "function delegationManager() view returns (address)",
+      "function scDelegationEnforcer() view returns (address)",
+    ]);
+    let associationsProxy: string | null = null;
+    for (const candidate of proxyCandidates) {
+      try {
+        // Check it has code
+        const code = await publicClient.getBytecode({ address: candidate as `0x${string}` });
+        if (!code || code === "0x") continue;
+        // Check it implements the new config getters (old proxies will revert here)
+        await publicClient.readContract({
+          address: candidate as `0x${string}`,
+          abi: cfgAbi,
+          functionName: "delegationManager",
+          args: [],
+        });
+        associationsProxy = candidate;
+        break;
+      } catch {
+        // try next candidate
+      }
+    }
+    if (!associationsProxy) {
+      throw new Error(
+        `No compatible AssociationsStore proxy found. Tried: ${proxyCandidates.join(", ")}. ` +
+        `Set ASSOCIATIONS_STORE_PROXY to the newly deployed proxy.`
+      );
+    }
+    console.log("✓ Using AssociationsStore proxy:", associationsProxy);
+
+    // Fetch SC-DELEGATION config early (used for approver proof and optionally initiator proof).
+    const dmAddr = (await publicClient.readContract({
+      address: associationsProxy as `0x${string}`,
+      abi: cfgAbi,
+      functionName: "delegationManager",
+      args: [],
+    })) as `0x${string}`;
+    const enforcerAddr = (await publicClient.readContract({
+      address: associationsProxy as `0x${string}`,
+      abi: cfgAbi,
+      functionName: "scDelegationEnforcer",
+      args: [],
+    })) as `0x${string}`;
+    if (dmAddr === "0x0000000000000000000000000000000000000000" || enforcerAddr === "0x0000000000000000000000000000000000000000") {
+      throw new Error("AssociationsStore SC-DELEGATION config not initialized (delegationManager/scDelegationEnforcer are zero). Deploy/initialize new proxy.");
+    }
+    console.log("✓ DelegationManager:", dmAddr);
+    console.log("✓ SC Delegation Enforcer:", enforcerAddr);
 
     // Step 5: Check if association already exists
     console.log("\nStep 5: Checking if association already exists on-chain...");
@@ -189,31 +249,107 @@ export async function POST(req: Request) {
     const digest = eip712Hash(record);
     console.log("  EIP-712 hash:", digest);
 
-    // Step 6: Sign as initiator (EOA) - only if needed
+    // Step 6: Sign as initiator - only if needed
+    // Allow initiatorKeyType to be either K1 (0x0001) or SC-DELEGATION (0x8004).
+    const initiatorKeyTypeDefault = (process.env.INITIATOR_KEY_TYPE || KEY_TYPE_K1).toLowerCase();
+    let initiatorKeyTypeToUse: string = initiatorKeyTypeDefault;
     let initiatorSignature: string;
     const needsInitiatorSignature = !existingAssociation || !existingAssociation.initiatorSignature || existingAssociation.initiatorSignature === "0x";
 
     if (needsInitiatorSignature) {
-      console.log("\nStep 6: Signing as initiator (EOA)");
-      // For ERC-8092, EOA signatures must be on the raw EIP-712 hash (no message prefix)
-      // SignatureChecker.isValidSignatureNow uses ECDSA.tryRecover on the raw hash directly
-      const hashBytes = ethers.getBytes(digest);
-      initiatorSignature = initiatorWallet.signingKey.sign(hashBytes).serialized;
-      console.log("✓ Initiator signature (raw hash bytes):", initiatorSignature.slice(0, 20) + "...");
+      if (initiatorKeyTypeToUse === KEY_TYPE_SC_DELEGATION) {
+        console.log("\nStep 6: Signing as initiator using SC-DELEGATION proof");
+        console.log("  EIP-712 hash:", digest);
+
+        // Create initiator delegate/session EOA signature over digest
+        const initSessionPriv = generatePrivateKey();
+        const initSessionAccount = privateKeyToAccount(initSessionPriv);
+        const initSessionSig = new ethers.Wallet(initSessionPriv).signingKey.sign(ethers.getBytes(digest)).serialized;
+        console.log("✓ Initiator delegate (session EOA):", initSessionAccount.address);
+        console.log("✓ Initiator delegate signature:", initSessionSig.slice(0, 20) + "...");
+
+        // Build a DF root delegation initiatorEOA -> delegateEOA with binding caveat (enforcer==scDelegationEnforcer, terms==digest)
+        const initDelegation = {
+          delegate: initSessionAccount.address as `0x${string}`,
+          delegator: initiatorAddress as `0x${string}`,
+          authority: DF_ROOT_AUTHORITY as `0x${string}`,
+          caveats: [{ enforcer: enforcerAddr as `0x${string}`, terms: digest as `0x${string}`, args: "0x" as `0x${string}` }],
+          salt: BigInt(ethers.hexlify(ethers.randomBytes(32))),
+        };
+        const initStructHash = dfHashDelegationStruct({
+          delegate: initDelegation.delegate,
+          delegator: initDelegation.delegator,
+          authority: initDelegation.authority,
+          caveats: [{ enforcer: enforcerAddr, terms: digest }],
+          salt: initDelegation.salt,
+        });
+        const initTyped = dfTypedDigest({ delegationManager: dmAddr, chainId: CHAIN_ID, delegationStructHash: initStructHash });
+        const initDelegationSig = initiatorWallet.signingKey.sign(ethers.getBytes(initTyped)).serialized;
+        const initSignedDelegation = { ...initDelegation, signature: initDelegationSig };
+        const initDelegationsBytes = encodeDelegations([initSignedDelegation] as any);
+
+        // Encode SC-DELEGATION proof bytes:
+        initiatorSignature = encodeScDelegationProof({
+          delegate: initSessionAccount.address,
+          delegateSignature: initSessionSig,
+          delegations: initDelegationsBytes,
+        });
+        console.log("✓ Initiator SC-DELEGATION proof blob:", initiatorSignature.slice(0, 20) + "...");
+      } else {
+        initiatorKeyTypeToUse = KEY_TYPE_K1;
+        console.log("\nStep 6: Signing as initiator (EOA/K1)");
+        // For ERC-8092 K1 signatures, sign the raw EIP-712 digest (no prefix)
+        const hashBytes = ethers.getBytes(digest);
+        initiatorSignature = initiatorWallet.signingKey.sign(hashBytes).serialized;
+        console.log("✓ Initiator signature (raw hash bytes):", initiatorSignature.slice(0, 20) + "...");
+      }
     } else {
       console.log("\nStep 6: Skipping initiator signature - association already exists");
       initiatorSignature = existingAssociation.initiatorSignature;
+      initiatorKeyTypeToUse = (existingAssociation.initiatorKeyType ?? initiatorKeyTypeDefault) as string;
     }
 
-    // Step 7: Generate approver signature (agent owner EOA, for ERC-1271 validation)
-    console.log("\nStep 7: Generating approver signature for ERC-1271 validation");
+    // Step 7: Generate approver signature using SC-DELEGATION proof (delegate signs digest + delegation chain)
+    console.log("\nStep 7: Generating approver signature using SC-DELEGATION proof");
     console.log("  EIP-712 hash:", digest);
 
-    // For ERC-1271, sign the raw hash bytes directly (without message prefix)
-    const hashBytes = ethers.getBytes(digest);
-    const approverSignature = agentOwnerWallet.signingKey.sign(hashBytes).serialized;
-    console.log("✓ Approver signature (agent owner EOA, raw hash bytes):", approverSignature.slice(0, 20) + "...");
-    console.log(" ........... approverSignature from agentOwnerWallet:", approverSignature);
+    // 7.1 create session delegate EOA + signature over digest (raw bytes)
+    const sessionPriv = generatePrivateKey();
+    const sessionAccount = privateKeyToAccount(sessionPriv);
+    const sessionSig = new ethers.Wallet(sessionPriv).signingKey.sign(ethers.getBytes(digest)).serialized;
+    console.log("✓ Delegate (session EOA):", sessionAccount.address);
+    console.log("✓ Delegate signature:", sessionSig.slice(0, 20) + "...");
+
+    // 7.2 create a delegation (approver/agent -> delegate) with a binding caveat: terms == digest (32 bytes)
+    // NOTE: We build this manually (instead of using createDelegation(scope=...)) because our SC-DELEGATION
+    // verifier only depends on the delegation struct + the binding caveat, and createDelegation requires a scope.
+    const delegation = {
+      delegate: sessionAccount.address as `0x${string}`,
+      delegator: agentAccount as `0x${string}`,
+      authority: DF_ROOT_AUTHORITY as `0x${string}`, // root authority
+      caveats: [
+        {
+          enforcer: enforcerAddr as `0x${string}`,
+          terms: digest as `0x${string}`,
+          args: "0x" as `0x${string}`,
+        },
+      ],
+      salt: BigInt(ethers.hexlify(ethers.randomBytes(32))),
+    };
+
+    // NOTE: HybridDeleGator delegation signatures are produced by the agent owner via `agentAccountClient.signDelegation`.
+    const delegationSignature = await (agentAccountClient as any).signDelegation({ delegation, chainId: CHAIN_ID });
+    const signedDelegation = { ...delegation, signature: delegationSignature };
+    const delegationsBytes = encodeDelegations([signedDelegation] as any);
+
+    // 7.4 build SC-DELEGATION proof blob as Solidity expects:
+    // abi.encode((address delegate, bytes delegateSignature, bytes delegations))
+    const approverSignature = encodeScDelegationProof({
+      delegate: sessionAccount.address,
+      delegateSignature: sessionSig,
+      delegations: delegationsBytes,
+    });
+    console.log("✓ SC-DELEGATION approverSignature proof blob:", approverSignature.slice(0, 20) + "...");
 
     // Step 8: Store association with initiator signature only (if needed)  
     let storeHash: string | null = null;
@@ -229,26 +365,10 @@ export async function POST(req: Request) {
       }
       console.log("✓ Initiator account has sufficient balance");
 
-      // Pre-validate the initiator signature before sending
-      console.log("  Pre-validating initiator signature...");
-      try {
-        // Validate by recovering the signer from the raw hash (no message prefix)
-        const initiatorAddressFromRecord = initiatorAddress.toLowerCase();
-        const recovered = ethers.recoverAddress(digest, initiatorSignature);
-        if (recovered.toLowerCase() !== initiatorAddressFromRecord) {
-          throw new Error(
-            `Initiator signature validation failed. Expected: ${initiatorAddressFromRecord}, Got: ${recovered.toLowerCase()}`
-          );
-        }
-        console.log("  ✓ Initiator signature pre-validation passed");
-      } catch (validateErr: any) {
-        throw new Error(`Initiator signature validation failed: ${validateErr?.message}`);
-      }
-
       const sarInitial = {
         revokedAt: 0,
-        initiatorKeyType: KEY_TYPE_K1, // EOA
-        approverKeyType: KEY_TYPE_ERC1271, // ERC1271 for smart account
+        initiatorKeyType: initiatorKeyTypeToUse, // K1 or SC-DELEGATION
+        approverKeyType: KEY_TYPE_SC_DELEGATION, // SC-DELEGATION proof
         initiatorSignature,
         approverSignature: "0x", // Empty - will be set later
         record,
@@ -275,16 +395,19 @@ export async function POST(req: Request) {
         if (dataMatch) {
           const errorSelector = dataMatch[1];
           if (errorSelector === "0x456db081") {
+            const latestBlockNum = await provider.getBlockNumber();
+            const latestBlock2 = await provider.getBlock(latestBlockNum);
+            const chainTimestamp = Number(latestBlock2?.timestamp ?? 0);
             throw new Error(
               `InvalidAssociation error (0x456db081). The association validation failed. ` +
               `This usually means:\n` +
-              `1. The initiator signature is invalid\n` +
+              `1. The initiator signature is invalid (for its initiatorKeyType)\n` +
               `2. The validAt timestamp is in the future\n` +
               `3. The record structure doesn't match what the contract expects\n\n` +
               `Verify that:\n` +
               `- The digest being signed matches what the contract computes\n` +
-              `- The signature is valid for the initiator address\n` +
-              `- validAt (${validAt}) <= block.timestamp (current: ${await provider.getBlockNumber().then(n => provider.getBlock(n).then(b => b.timestamp))})`
+              `- The signature/proof is valid for the initiator address\n` +
+              `- validAt (${validAt}) <= block.timestamp (current: ${chainTimestamp})`
             );
           }
         }
@@ -397,30 +520,32 @@ export async function POST(req: Request) {
       }
       console.log("    ✓ Agent account is a contract (can use ERC-1271)");
 
-      // Preflight ERC-1271 validation
-      console.log("    Preflighting ERC-1271 validation...");
-      console.log(" ........... approverSignature:", approverSignature);
+      // Preflight validation.
+      // For SC-DELEGATION, the approverSignature is validated by AssociationsStore/AssociatedAccountsLib,
+      // NOT by calling agentAccount.isValidSignature(hash, signature) directly.
+      console.log("    Preflighting AssociationsStore validation...");
       try {
-        const ERC1271_ABI = parseAbi([
-          "function isValidSignature(bytes32 hash, bytes signature) view returns (bytes4 magicValue)",
+        const VALIDATE_ABI = parseAbi([
+          "function validateSignedAssociationRecord((uint40 revokedAt,bytes2 initiatorKeyType,bytes2 approverKeyType,bytes initiatorSignature,bytes approverSignature,(bytes initiator,bytes approver,uint40 validAt,uint40 validUntil,bytes4 interfaceId,bytes data) record) sar) view returns (bool)",
         ]);
-        const isValidSigData = encodeFunctionData({
-          abi: ERC1271_ABI,
-          functionName: "isValidSignature",
-          args: [digest as `0x${string}`, approverSignature as `0x${string}`],
+        const sarToValidate = {
+          revokedAt: 0,
+          initiatorKeyType: initiatorKeyTypeToUse,
+          approverKeyType: KEY_TYPE_SC_DELEGATION,
+          initiatorSignature: initiatorSignature as `0x${string}`,
+          approverSignature: approverSignature as `0x${string}`,
+          record,
+        };
+        const ok = await publicClient.readContract({
+          address: associationsProxy as `0x${string}`,
+          abi: VALIDATE_ABI,
+          functionName: "validateSignedAssociationRecord",
+          args: [sarToValidate as any],
         });
-
-        const isValidSigResult = await publicClient.call({
-          to: agentAccount as `0x${string}`,
-          data: isValidSigData,
-        });
-
-        if (!isValidSigResult.data || isValidSigResult.data === "0xffffffff" || !isValidSigResult.data.startsWith("0x1626ba7e")) {
-          throw new Error(`ERC-1271 preflight validation failed. Magic value: ${isValidSigResult.data}`);
-        }
-        console.log("    ✓ ERC-1271 preflight validation passed");
+        if (!ok) throw new Error("validateSignedAssociationRecord returned false");
+        console.log("    ✓ AssociationsStore preflight validation passed");
       } catch (preflightErr: any) {
-        throw new Error(`ERC-1271 preflight validation failed: ${preflightErr?.message}`);
+        throw new Error(`AssociationsStore preflight validation failed: ${preflightErr?.message || preflightErr}`);
       }
 
       // Build the call we want the agent account to execute (via delegation redemption)

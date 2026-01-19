@@ -10,3 +10,5 @@ bytes2 constant BLS = 0x0004;
 bytes2 constant WEBAUTHN = 0x8001;
 bytes2 constant ERC1271 = 0x8002;
 bytes2 constant ERC6492 = 0x8003;
+// Custom key type: MetaMask Smart Account Delegation proof (delegate-signed hash + delegation chain proof)
+bytes2 constant SC_DELEGATION = 0x8004;

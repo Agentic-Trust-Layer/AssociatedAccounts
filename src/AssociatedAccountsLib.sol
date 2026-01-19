@@ -7,6 +7,8 @@ import {InteroperableAddress} from "./InteroperableAddresses.sol";
 
 import {IERC1271} from "./interface/IERC1271.sol";
 import {SignatureChecker} from "lib/openzeppelin-contracts/contracts/utils/cryptography/SignatureChecker.sol";
+import {ScDelegationLib} from "./ScDelegationLib.sol";
+import {IScDelegationVerifier} from "./interface/IScDelegationVerifier.sol";
 
 /// @notice Helper Lib for creating, signing and validating AssociatedAccount records and the resulting
 ///     SignedAssociationRecords.
@@ -27,6 +29,19 @@ library AssociatedAccountsLib {
         view
         returns (bool)
     {
+        return validateAssociatedAccountWithConfig(
+            sar,
+            ScDelegationLib.Config({delegationManager: address(0), scDelegationEnforcer: address(0)}),
+            address(0)
+        );
+    }
+
+    /// @notice Validates a SignedAssociationRecord using additional config for SC_DELEGATION signatures.
+    function validateAssociatedAccountWithConfig(
+        AssociatedAccounts.SignedAssociationRecord memory sar,
+        ScDelegationLib.Config memory scCfg,
+        address scDelegationVerifier
+    ) internal view returns (bool) {
         bytes32 hash = eip712Hash(sar.record);
         
         // 1. The current timestamp MUST be greater than or equal to the `validAt` timestamp.
@@ -40,7 +55,14 @@ library AssociatedAccountsLib {
         // of the underlying `AssociatedAccountRecord` using an appropriate `initiatorKeyType` validation mechanism. 
         if (
             sar.initiatorSignature.length > 0
-                && !_validateSignature(sar.record.initiator, sar.initiatorKeyType, sar.initiatorSignature, hash)
+                && !_validateSignature(
+                    sar.record.initiator,
+                    sar.initiatorKeyType,
+                    sar.initiatorSignature,
+                    hash,
+                    scCfg,
+                    scDelegationVerifier
+                )
         ) {
             return false;
         }
@@ -48,7 +70,14 @@ library AssociatedAccountsLib {
         // of the underlying `AssociatedAccountRecord` using an appropriate `approverKeyType` validation mechanism. 
         if (
             sar.approverSignature.length > 0
-                && !_validateSignature(sar.record.approver, sar.approverKeyType, sar.approverSignature, hash)
+                && !_validateSignature(
+                    sar.record.approver,
+                    sar.approverKeyType,
+                    sar.approverSignature,
+                    hash,
+                    scCfg,
+                    scDelegationVerifier
+                )
         ) {
             return false;
         }
@@ -92,7 +121,14 @@ library AssociatedAccountsLib {
         return _eip712Hash(aar.initiator, aar.approver, aar.validAt, aar.validUntil, aar.interfaceId, aar.data);
     }
 
-    function _validateSignature(bytes memory account, bytes2 keyType, bytes memory signature, bytes32 hash)
+    function _validateSignature(
+        bytes memory account,
+        bytes2 keyType,
+        bytes memory signature,
+        bytes32 hash,
+        ScDelegationLib.Config memory scCfg,
+        address scDelegationVerifier
+    )
         internal
         view
         returns (bool)
@@ -116,6 +152,9 @@ library AssociatedAccountsLib {
             return _validateWebAuthn(hash, accountAddr, signature);
         } else if (keyType == ERC1271) {
             return _validateErc1271(hash, accountAddr, signature);
+        } else if (keyType == SC_DELEGATION) {
+            if (scDelegationVerifier == address(0)) return false;
+            return IScDelegationVerifier(scDelegationVerifier).validate(hash, accountAddr, signature, scCfg);
         } else if (keyType == ERC6492) {
             return _validateErc6492(hash, accountAddr, signature);
         } else {

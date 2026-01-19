@@ -2,7 +2,7 @@ import { ethers } from "ethers";
 
 const DEFAULTS = {
   sepoliaRpcUrl: "https://rpc.sepolia.org",
-  associationsStoreProxy: "0x3418a5297c75989000985802b8ab01229cdddd24",
+  associationsStoreProxy: "0x8346903837f89BaC08B095DbF5c1095071a0f349",
 } as const;
 
 function req(name: string): string {
@@ -42,6 +42,27 @@ export function getAgentOwnerPrivateKey(): string {
 export function getAssociationsProxyAddress(): string {
   const raw = (process.env.ASSOCIATIONS_STORE_PROXY ?? DEFAULTS.associationsStoreProxy).trim();
   return ethers.getAddress(raw.toLowerCase());
+}
+
+export function getAssociationsProxyAddressCandidates(): string[] {
+  const cands: string[] = [];
+  const push = (v: string | undefined) => {
+    if (!v) return;
+    const t = v.trim();
+    if (!t) return;
+    try {
+      cands.push(ethers.getAddress(t.toLowerCase()));
+    } catch {
+      // ignore
+    }
+  };
+
+  // If a stale value is set in .env, we want to still be able to fall back to the default.
+  push(process.env.ASSOCIATIONS_STORE_PROXY);
+  push(DEFAULTS.associationsStoreProxy);
+
+  // De-dupe while preserving order
+  return Array.from(new Set(cands));
 }
 
 export function getAgentId(): number {
