@@ -1,4 +1,6 @@
 {
+  "/api/associations/route": "app/api/associations/route.js",
+  "/api/test/route": "app/api/test/route.js",
   "/api/validate-sar/route": "app/api/validate-sar/route.js",
   "/page": "app/page.js"
 }

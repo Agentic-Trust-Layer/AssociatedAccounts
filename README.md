@@ -15,11 +15,11 @@ This allows upgrading the implementation while keeping state at the proxy addres
 
 | Contract | Address | Link |
 |----------|---------|------|
-| **Proxy** | `0x8346903837f89BaC08B095DbF5c1095071a0f349` | [View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x8346903837f89bac08b095dbf5c1095071a0f349) |
-| Implementation | `0x8a0d549E7799D54B7730BB167Ff92983b1F3e5b5` | [View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x8a0d549e7799d54b7730bb167ff92983b1f3e5b5) |
-| ProxyAdmin | `0x341aA8119033340173C1A6944124d52bF8198551` | [View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x341aa8119033340173c1a6944124d52bf8198551) |
-| ScDelegationEnforcer (marker) | `0xd92ccc840b130920c2041BEEd4dB143d8EbF72a8` | [View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0xd92ccc840b130920c2041beed4db143d8ebf72a8) |
-| ScDelegationVerifier | `0x3F5795716DffEc92bd3eb861BBc9Bc01d5b9bCb9` | [View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x3f5795716dffec92bd3eb861bbc9bc01d5b9bcb9) |
+| **Proxy** | `0x3d282c9E5054E3d819639246C177676A98cB0a1E` | [View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x3d282c9e5054e3d819639246c177676a98cb0a1e) |
+| Implementation | `0x1719f33e9F86d7a6AE905621C9dcAaa5e4214410` | [View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x1719f33e9f86d7a6ae905621c9dcaaa5e4214410) |
+| ProxyAdmin | `0x0C16e38cf224FF95bD241aA8051Db3995C9a2A4E` | [View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x0c16e38cf224ff95bd241aa8051db3995c9a2a4e) |
+| ScDelegationEnforcer (marker) | `0x107d5586Cb98C00d03B696d594eA15e6CE9F50d3` | [View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x107d5586cb98c00d03b696d594ea15e6ce9f50d3) |
+| ScDelegationVerifier | `0xAd762a8bBFafc2BeA41a2400F9bE5de8B5Fd1617` | [View on Sepolia Etherscan](https://sepolia.etherscan.io/address/0xad762a8bbfafc2bea41a2400f9be5de8b5fd1617) |
 
 > **Note:** Always interact with the Proxy address. The implementation contract contains the logic, but the proxy maintains the state and is upgradeable. 
 
@@ -131,9 +131,9 @@ This is why `delegationManager` is part of the SC-DELEGATION config: if you poin
 
 ### Binding caveat (prevents “sign-anything”)
 
-SC-DELEGATION requires a root delegation caveat that binds the delegation to a specific association digest:
+SC-DELEGATION requires a delegation caveat that binds the delegation to a specific association digest:
 
-- the root delegation (`delegations[0]`) must contain a caveat where:
+- the delegation that targets the proof’s leaf delegate (`delegations[i].delegate == proof.delegate`) must contain a caveat where:
   - `caveat.enforcer == scDelegationEnforcer`
   - `caveat.terms` is exactly 32 bytes and equals the association digest (`bytes32(hash)`)
 

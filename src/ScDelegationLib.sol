@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ECDSA} from "lib/openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
 import {SignatureChecker} from "lib/openzeppelin-contracts/contracts/utils/cryptography/SignatureChecker.sol";
 import {IDelegationManager} from "./interface/IDelegationManager.sol";
 
@@ -67,16 +66,18 @@ library ScDelegationLib {
         if (p.delegations.length == 0) return false;
 
         // 1) delegate must have signed the raw hash bytes
-        address recovered = ECDSA.recover(hash, p.delegateSignature);
-        if (recovered != p.delegate) return false;
+        // Support both EOAs (ECDSA) and contract delegates (ERC-1271).
+        if (!SignatureChecker.isValidSignatureNow(p.delegate, hash, p.delegateSignature)) return false;
 
         // 2) verify delegation chain
         Delegation[] memory ds = abi.decode(p.delegations, (Delegation[]));
         if (ds.length == 0) return false;
         if (ds[0].delegator != signer) return false;
         if (ds[ds.length - 1].delegate != p.delegate) return false;
-        // Require digest-binding caveat on the root delegation.
-        if (!_hasBindingCaveat(ds[0].caveats, cfg.scDelegationEnforcer, hash)) return false;
+        // Require digest-binding caveat on the delegation that targets the leaf delegate.
+        // This enables session-package roots (agent -> session) to remain stable while allowing per-digest binding
+        // on a later hop (session -> leaf).
+        if (!_hasBindingCaveatToLeaf(ds, cfg.scDelegationEnforcer, hash, p.delegate)) return false;
 
         bytes32 prevOffchainHash = bytes32(0);
         for (uint256 i = 0; i < ds.length; i++) {
@@ -105,6 +106,18 @@ library ScDelegationLib {
         }
 
         return true;
+    }
+
+    function _hasBindingCaveatToLeaf(Delegation[] memory ds, address enforcer, bytes32 hash, address leafDelegate)
+        private
+        pure
+        returns (bool)
+    {
+        for (uint256 i = 0; i < ds.length; i++) {
+            if (ds[i].delegate != leafDelegate) continue;
+            if (_hasBindingCaveat(ds[i].caveats, enforcer, hash)) return true;
+        }
+        return false;
     }
 
     function _hasBindingCaveat(Caveat[] memory caveats, address enforcer, bytes32 hash) private pure returns (bool) {

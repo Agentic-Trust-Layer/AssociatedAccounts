@@ -2,7 +2,7 @@ import { ethers } from "ethers";
 
 const DEFAULTS = {
   sepoliaRpcUrl: "https://rpc.sepolia.org",
-  associationsStoreProxy: "0x8346903837f89BaC08B095DbF5c1095071a0f349",
+  associationsStoreProxy: "0x3d282c9E5054E3d819639246C177676A98cB0a1E",
 } as const;
 
 function req(name: string): string {

@@ -15,6 +15,11 @@
       "static/chunks/main-app.js",
       "static/chunks/app/api/associations/route.js"
     ],
+    "/api/test/route": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/api/test/route.js"
+    ],
     "/api/validate-sar/route": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
